@@ -1,7 +1,9 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 using Infrastructure;
 using Microsoft.AspNetCore.Mvc;
+using NUnit.Framework;
 using OpenAuth.App;
 using OpenAuth.App.Request;
 using OpenAuth.App.Response;
@@ -37,7 +39,7 @@ namespace OpenAuth.WebApi.Controllers
         }
 
         //添加或修改
-       [HttpPost]
+        [HttpPost]
         public Response Add(FlowScheme obj)
         {
             var result = new Response();
@@ -56,7 +58,7 @@ namespace OpenAuth.WebApi.Controllers
         }
 
         //添加或修改
-       [HttpPost]
+        [HttpPost]
         public Response Update(FlowScheme obj)
         {
             var result = new Response();
@@ -78,13 +80,22 @@ namespace OpenAuth.WebApi.Controllers
         /// 加载列表
         /// </summary>
         [HttpGet]
-        public async Task<TableData> Load([FromQuery]QueryFlowSchemeListReq request)
+        public async Task<TableData> Load([FromQuery] QueryFlowSchemeListReq request)
         {
             return await _app.Load(request);
         }
 
-       [HttpPost]
-        public Response Delete([FromBody]string[] ids)
+        /// <summary>
+        /// 加载列表
+        /// </summary>
+        [HttpGet]
+        public TableData Switch([FromQuery] string key, decimal JE)
+        {
+            return _app.Swicth(key, JE);
+        }
+
+        [HttpPost]
+        public Response Delete([FromBody] string[] ids)
         {
             var result = new Response();
             try
@@ -101,7 +112,7 @@ namespace OpenAuth.WebApi.Controllers
             return result;
         }
 
-        public FlowSchemesController(FlowSchemeApp app) 
+        public FlowSchemesController(FlowSchemeApp app)
         {
             _app = app;
         }

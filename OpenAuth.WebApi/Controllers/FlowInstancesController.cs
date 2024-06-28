@@ -83,7 +83,55 @@ namespace OpenAuth.WebApi.Controllers
 
             return result;
         }
-        
+
+        /// <summary>
+        /// 新增流程
+        /// </summary>
+        [HttpPost]
+        public Response AddSwitch(switchFlow data)
+        {
+            var result = new Response();
+            try
+            {
+                _app.AddSwitch(data);
+            }
+            catch (Exception ex)
+            {
+                result.Code = 500;
+                result.Message = ex.InnerException?.Message ?? ex.Message;
+            }
+            return result;
+        }
+        /// <summary>
+        /// 按流程实例名字获取,并把各个节点按顺序排好,
+        /// </summary>
+        /// <param name="schemeName"></param>
+        /// <returns></returns>
+        [HttpGet]
+        public async Task<TableData> GetOrderByNode(string schemeName)
+        {
+            return await _app.GetOrderByNode(schemeName);
+        }
+
+        /// <summary>根据名称判断该用哪个流程模板</summary>
+        /// <remarks> meteor 2024年5月20日</remarks>
+        //[HttpPost]
+        //public Response SwitchAdd([FromBody] AddFlowInstanceReq obj)
+        //{
+        //    var result = new Response();
+        //    try
+        //    {
+        //        _app.SwitchAdd(obj);
+        //    }
+        //    catch (Exception ex)
+        //    {
+        //        result.Code = 500;
+        //        result.Message = ex.InnerException?.Message ?? ex.Message;
+        //    }
+
+        //    return result;
+        //}
+
         /// <summary>召回流程</summary>
         /// <remarks> 召回后流程状态为【草稿】状态，可以再次发起流程。所有的流程节点状态还原，但保留审批记录 </remarks>
         [HttpPost]

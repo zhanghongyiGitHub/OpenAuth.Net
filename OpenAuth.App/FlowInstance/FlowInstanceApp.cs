@@ -32,6 +32,7 @@ using Newtonsoft.Json.Linq;
 using OpenAuth.Repository;
 using OpenAuth.Repository.QueryObj;
 using Yitter.IdGenerator;
+using Newtonsoft.Json;
 
 namespace OpenAuth.App
 {
@@ -351,7 +352,7 @@ namespace OpenAuth.App
                 {
                     throw (new Exception("审核异常,找不到审核节点"));
                 }
-                
+
                 flowInstanceOperationHistory.Content =
                     $"{user.Account}-{DateTime.Now.ToString("yyyy-MM-dd HH:mm")}审批了【{wfruntime.Nodes[canCheckId].name}】" +
                     $"结果：{(tag.Taged == 1 ? "同意" : "不同意")}，备注：{tag.Description}";
@@ -385,7 +386,7 @@ namespace OpenAuth.App
             }
 
             #endregion 会签
-            
+
             #region 一般审核
 
             else
@@ -593,7 +594,7 @@ namespace OpenAuth.App
 
                 makerList = GenericHelpers.ArrayToString(request.NodeDesignates, makerList);
             }
-            else if (wfruntime.nextNode.setInfo.NodeDesignate == Setinfo.RUNTIME_PARENT 
+            else if (wfruntime.nextNode.setInfo.NodeDesignate == Setinfo.RUNTIME_PARENT
                      || wfruntime.nextNode.setInfo.NodeDesignate == Setinfo.RUNTIME_MANY_PARENTS)
             {
                 //如果是上一节点执行人的直属上级或连续多级直属上级
@@ -606,7 +607,7 @@ namespace OpenAuth.App
                 //当审批流程时，能进到这里，表明当前登录用户已经有审批当前节点的权限，完全可以直接用登录用户的直接上级
                 var user = _auth.GetCurrentUser().User;
                 var parentId = _userManagerApp.GetParent(user.Id);
-                
+
                 makerList = GenericHelpers.ArrayToString(new[]{parentId}, makerList);
             }
             else if (wfruntime.nextNode.setInfo.NodeDesignate == Setinfo.RUNTIME_CHAIRMAN)
@@ -828,8 +829,8 @@ namespace OpenAuth.App
                 var instances = UnitWork.Find<FlowInstanceTransitionHistory>(u => u.CreateUserId == user.User.Id)
                     .Select(u => u.InstanceId).Distinct();
                 var query = from ti in instances
-                    join ct in UnitWork.Find<FlowInstance>(null) on ti equals ct.Id
-                    select ct;
+                            join ct in UnitWork.Find<FlowInstance>(null) on ti equals ct.Id
+                            select ct;
 
                 // 加入搜索自定义标题
                 if (!string.IsNullOrEmpty(request.key))
@@ -982,6 +983,93 @@ namespace OpenAuth.App
 
             AddTransHistory(wfruntime);
             UnitWork.Save();
+        }
+
+        public void AddSwitch(switchFlow data)
+        {
+            //按id获取到模板 /api/FlowSchemes/Get
+            FlowScheme sc = _flowSchemeApp.Get(data.FlowSchemesId);
+            sc.SchemeName = data.bxm + "_" + sc.SchemeName;
+            sc.Id = Guid.NewGuid().ToString();
+            //转换模型
+            schemeContentModel schemeModel = JsonConvert.DeserializeObject<schemeContentModel>(sc.SchemeContent);
+
+            //从数据库根据用户名称,查询出用户序号
+            foreach (switchFlow_SignerType s in data.data)
+            {
+                User u = _userManagerApp.GetByAccount(s.Signer);
+                if (u == null)
+                {
+                    throw new Exception($"{s.Signer}不唯一,找不到相关数据.");
+                }
+                NodesItem node = schemeModel.nodes.Find(v => v.name == s.SignerType);
+                //node.id= s.NodeCode;//Sign_Id 不能放在id,因为有很多关联
+                node.name =  node.name + "_" + s.Signer;//经费负责人_周华,CWWLBZ\Controllers\ViewUserSignController.cs 行 562 在使用这个格式
+                node.setInfo.NodeDesignate = "SPECIAL_USER";
+                node.setInfo.NodeDesignateData.users = new List<string>
+                {
+                    u.Id
+                };
+                node.setInfo.NodeDesignateData.Texts = s.Signer;
+                node.setInfo.NodeCode = s.NodeCode;//Sign_Id
+                node.setInfo.NodeName = s.NodeName;//JHF经费号
+                node.setInfo.Description = s.Description;//item.RelationId, item.SignType, item.Sign_Id ,item.JFH,item.SignAmount
+            }
+            sc.SchemeContent = JsonConvert.SerializeObject(schemeModel);
+
+            //添加到模板
+            _flowSchemeApp.Add(sc);
+
+            //创建流程实例
+            AddFlowInstanceReq addFlowInstanceReq = new AddFlowInstanceReq()
+            {
+                OrgId = "0000",//"08f41bf6-0000-4b1e-bd3e-2ff538b44b1b",
+                Code = data.bxm,
+                CustomName = data.bxm,
+                Description = sc.SchemeName + "_",
+                FrmData = JsonConvert.SerializeObject(new { money = data.JE }),
+                FrmType = 2,//默认为2
+                SchemeId = sc.Id,//放刚创建的模型ID
+            };
+            CreateInstance(addFlowInstanceReq);
+
+            //删除临时流程模板
+            //_flowSchemeApp.Delete(new string[] { sc.Id });
+        }
+
+        /// <summary>
+        /// 按流程实例名字获取,并把各个节点按顺序排好,
+        /// </summary>
+        /// <param name="schemeName"></param>
+        /// <returns></returns>
+        public async Task<TableData> GetOrderByNode(string schemeName)
+        {
+            QueryFlowInstanceListReq request = new QueryFlowInstanceListReq()
+            {
+                key = schemeName
+            };
+            TableData b = await Load(request);
+            if (b.count == 0)
+            {
+                request.type = "wait";
+                b = await Load(request);
+                if (b.count == 0)
+                {
+                    return new TableData();
+                }
+            }
+            List<FlowInstance> a = b.data;
+
+            //转换模型
+            schemeContentModel schemeModel = JsonConvert.DeserializeObject<schemeContentModel>(a.FirstOrDefault().SchemeContent);
+            //进行排序
+            List<NodesItem> v = _flowSchemeApp.orderby(schemeModel);
+
+            TableData t = new()
+            {
+                data = v
+            };
+            return t;
         }
     }
 }

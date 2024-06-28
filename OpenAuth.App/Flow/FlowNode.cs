@@ -107,6 +107,10 @@
         public string[] users { get; set; }
         public string[] roles { get; set; }
         public string[] orgs { get; set; }
+        /// <summary>
+        /// 加了个姓名,不知道会不会有值
+        /// </summary>
+        public string texts { get; set; }
     }
 
     /// <summary>
