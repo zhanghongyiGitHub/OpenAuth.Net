@@ -103,6 +103,28 @@ namespace OpenAuth.WebApi.Controllers
             return result;
         }
         /// <summary>
+        /// 跳任意节点
+        /// </summary>
+        /// <param name="request">FlowInstanceId,NodeRejectStep=转跳到的节点,VerificationOpinion=说明备注</param>
+        /// <returns></returns>
+        [HttpPost]
+        public Response JumpToNode(VerificationReq request)
+        {
+            var response = new Response();
+            try
+            {
+                _app.JumpToNode(request);
+
+            }
+            catch (Exception ex)
+            {
+                response.Code = 500;
+                response.Message = ex.InnerException?.Message ?? ex.Message;
+            }
+
+            return response;
+        }
+        /// <summary>
         /// 按流程实例名字获取,并把各个节点按顺序排好,
         /// </summary>
         /// <param name="schemeName"></param>
@@ -111,6 +133,16 @@ namespace OpenAuth.WebApi.Controllers
         public async Task<TableData> GetOrderByNode(string schemeName)
         {
             return await _app.GetOrderByNode(schemeName);
+        }
+        /// <summary>
+        /// 按流程实例名字获取流程
+        /// </summary>
+        /// <param name="schemeName"></param>
+        /// <returns></returns>
+        [HttpGet]
+        public async Task<TableData> LoadBySchemeName(string schemeName)
+        {
+            return await _app.LoadBySchemeName(schemeName);
         }
 
         /// <summary>根据名称判断该用哪个流程模板</summary>

@@ -136,7 +136,7 @@ namespace OpenAuth.App
             if (flowInstance.FrmType == 1) //如果是开发者自定义的表单
             {
                 var t = Type.GetType("OpenAuth.App." + flowInstance.DbName + "App");
-                ICustomerForm icf = (ICustomerForm) _serviceProvider.GetService(t);
+                ICustomerForm icf = (ICustomerForm)_serviceProvider.GetService(t);
                 icf.Add(flowInstance.Id, flowInstance.FrmData);
             }
 
@@ -248,7 +248,7 @@ namespace OpenAuth.App
                 if (form.FrmType == 1) //如果是开发者自定义的表单,更新对应数据库表数据
                 {
                     var t = Type.GetType("OpenAuth.App." + req.DbName + "App");
-                    ICustomerForm icf = (ICustomerForm) _serviceProvider.GetService(t);
+                    ICustomerForm icf = (ICustomerForm)_serviceProvider.GetService(t);
                     icf.Update(req.Id, req.FrmData);
                 }
                 else if (form.FrmType == 2 && !string.IsNullOrEmpty(form.DbName)) //拖拽表单定义了关联数据库
@@ -392,14 +392,14 @@ namespace OpenAuth.App
             else
             {
                 wfruntime.MakeTagNode(wfruntime.currentNodeId, tag);
-                if (tag.Taged == (int) TagState.Ok)
+                if (tag.Taged == (int)TagState.Ok)
                 {
                     bool canNext = true;
                     if (wfruntime.currentNode.setInfo.NodeDesignate == Setinfo.RUNTIME_MANY_PARENTS)
                     {
                         var roles = _auth.GetCurrentUser().Roles;
                         //如果是连续多级直属上级且还没到指定的角色，只改变执行人，不到下一个节点
-                        if (!wfruntime.currentNode.setInfo.NodeDesignateData.roles.Intersect(roles.Select(u =>u.Id)).Any())
+                        if (!wfruntime.currentNode.setInfo.NodeDesignateData.roles.Intersect(roles.Select(u => u.Id)).Any())
                         {
                             canNext = false;
                             var parentId = _userManagerApp.GetParent(user.Id);
@@ -444,7 +444,7 @@ namespace OpenAuth.App
                 if (flowInstance.FrmType == 1) //如果是开发者自定义的表单,更新对应数据库表数据
                 {
                     var t = Type.GetType("OpenAuth.App." + flowInstance.DbName + "App");
-                    ICustomerForm icf = (ICustomerForm) _serviceProvider.GetService(t);
+                    ICustomerForm icf = (ICustomerForm)_serviceProvider.GetService(t);
                     icf.Update(flowInstance.Id, flowInstance.FrmData);
                 }
             }
@@ -508,7 +508,7 @@ namespace OpenAuth.App
             var tag = new Tag
             {
                 Description = reqest.VerificationOpinion,
-                Taged = (int) TagState.Reject,
+                Taged = (int)TagState.Reject,
                 UserId = user.Id,
                 UserName = user.Name
             };
@@ -544,6 +544,74 @@ namespace OpenAuth.App
             //给流程创建人发送通知信息
             _messageApp.SendMsgTo(flowInstance.CreateUserId,
                 $"你的流程[{flowInstance.CustomName}]已被{user.Name}驳回。备注信息:{reqest.VerificationOpinion}");
+
+            UnitWork.Save();
+
+            wfruntime.NotifyThirdParty(_httpClientFactory.CreateClient(), tag);
+
+            return true;
+        }
+
+        /// <summary>
+        /// 任意转跳节点
+        /// </summary>
+        /// <param name="request">FlowInstanceId,NodeRejectStep=转跳到的节点,VerificationOpinion=说明备注</param>
+        /// <returns></returns>
+        public bool JumpToNode(VerificationReq reqest)
+        {
+            var user = _auth.GetCurrentUser().User;
+            FlowInstance flowInstance = Get(reqest.FlowInstanceId);
+            //if (flowInstance.MakerList != "1" && !flowInstance.MakerList.Contains(user.Id))
+            //{
+            //    throw new Exception("当前用户没有驳回该节点权限");
+            //}
+
+            FlowRuntime wfruntime = new FlowRuntime(flowInstance);
+
+            string rejectNode = ""; //驳回的节点
+            rejectNode = string.IsNullOrEmpty(reqest.NodeRejectStep)
+                ? wfruntime.RejectNode(reqest.NodeRejectType)
+                : reqest.NodeRejectStep;
+
+            var tag = new Tag
+            {
+                Description = reqest.VerificationOpinion,
+                Taged = (int)TagState.Reject,
+                UserId = user.Id,
+                UserName = user.Name
+            };
+
+            wfruntime.MakeTagNode(wfruntime.currentNodeId, tag);
+            flowInstance.IsFinish = FlowInstanceStatus.Rejected; //4表示驳回（需要申请者重新提交表单）
+            if (rejectNode != "")
+            {
+                flowInstance.PreviousId = flowInstance.ActivityId;
+                flowInstance.ActivityId = rejectNode;
+                flowInstance.ActivityType = wfruntime.GetNodeType(rejectNode);
+                flowInstance.ActivityName = wfruntime.Nodes[rejectNode].name;
+                flowInstance.MakerList = GetNodeMarkers(wfruntime.Nodes[rejectNode], flowInstance.CreateUserId);
+
+                AddTransHistory(wfruntime);
+            }
+
+            flowInstance.SchemeContent = JsonHelper.Instance.Serialize(wfruntime.ToSchemeObj());
+            UnitWork.Update(flowInstance);
+
+            UnitWork.Add(new FlowInstanceOperationHistory
+            {
+                InstanceId = reqest.FlowInstanceId,
+                CreateUserId = user.Id,
+                CreateUserName = user.Name,
+                CreateDate = DateTime.Now,
+                Content = "【"
+                          + wfruntime.currentNode.name
+                          + "】【" + DateTime.Now.ToString("yyyy-MM-dd HH:mm") + "】!!!任意转跳节点!!!,备注："
+                          + reqest.VerificationOpinion
+            });
+
+            //给流程创建人发送通知信息
+            //_messageApp.SendMsgTo(flowInstance.CreateUserId,
+            //    $"你的流程[{flowInstance.CustomName}]已被{user.Name}驳回。备注信息:{reqest.VerificationOpinion}");
 
             UnitWork.Save();
 
@@ -608,7 +676,7 @@ namespace OpenAuth.App
                 var user = _auth.GetCurrentUser().User;
                 var parentId = _userManagerApp.GetParent(user.Id);
 
-                makerList = GenericHelpers.ArrayToString(new[]{parentId}, makerList);
+                makerList = GenericHelpers.ArrayToString(new[] { parentId }, makerList);
             }
             else if (wfruntime.nextNode.setInfo.NodeDesignate == Setinfo.RUNTIME_CHAIRMAN)
             {
@@ -665,7 +733,7 @@ namespace OpenAuth.App
             {
                 if (node.setInfo != null && node.setInfo.Taged != null)
                 {
-                    if (node.type != FlowNode.FORK && node.setInfo.Taged != (int) TagState.Ok) //如果节点是不同意或驳回，则不用再找了
+                    if (node.type != FlowNode.FORK && node.setInfo.Taged != (int)TagState.Ok) //如果节点是不同意或驳回，则不用再找了
                     {
                         break;
                     }
@@ -711,7 +779,7 @@ namespace OpenAuth.App
             }
             else if (node.setInfo != null)
             {
-                if (string.IsNullOrEmpty(node.setInfo.NodeDesignate) ||node.setInfo.NodeDesignate == Setinfo.ALL_USER) //所有成员
+                if (string.IsNullOrEmpty(node.setInfo.NodeDesignate) || node.setInfo.NodeDesignate == Setinfo.ALL_USER) //所有成员
                 {
                     makerList = "1";
                 }
@@ -752,7 +820,7 @@ namespace OpenAuth.App
                 CheckNodeDesignate(request);
             }
 
-            bool isReject = TagState.Reject.Equals((TagState) Int32.Parse(request.VerificationFinally));
+            bool isReject = TagState.Reject.Equals((TagState)Int32.Parse(request.VerificationFinally));
             if (isReject) //驳回
             {
                 NodeReject(request);
@@ -993,6 +1061,48 @@ namespace OpenAuth.App
             sc.Id = Guid.NewGuid().ToString();
             //转换模型
             schemeContentModel schemeModel = JsonConvert.DeserializeObject<schemeContentModel>(sc.SchemeContent);
+            //查看有多少个经费负责人
+            string _SignerType = "经费负责人";
+
+            int jffzr_count = data.data.Count(v => v.SignerType == _SignerType);
+            if (jffzr_count > 1)
+            {
+                NodesItem node_find = schemeModel.nodes.Find(v => v.name == _SignerType);
+                //保存基础的节点id,做节点连接时用到
+                string _node_id = node_find.id;
+                //LinesItem line_start = schemeModel.lines.Find(v => v.to == _node_id);
+                LinesItem line_end_find = schemeModel.lines.Find(v => v.from == _node_id);
+
+                string _line_id = line_end_find.id;
+                //第一个节点设置为_0,方便循环里设置
+                //node_find.id += "_0";
+                //i 从1开始,因为0不用新增
+                for (int i = 1; i < jffzr_count; i++)
+                {
+                    //深拷贝,后面添加到队列
+                    NodesItem node = DeepCopy(node_find);
+                    //修改高度，避免相互遮挡。
+                    node.top += ( 200 * i);
+                    node.id = _node_id + "_" + i;
+                    //把修改过的节点加入
+                    schemeModel.nodes.Add(node);
+
+                    //深拷贝,后面添加到队列
+                    LinesItem line_end = DeepCopy(line_end_find);
+                    //设置连线的 from 和 to
+                    line_end.id = _line_id + "_" + i;
+                    //i - 1=0表示是第一个节点,所以不用改 from
+                    if ((i - 1) != 0)
+                    {
+                        line_end.from = _node_id + "_" + (i - 1);
+                    }
+                    line_end.to = _node_id + "_" + i;
+                    //把修改过的连线加入
+                    schemeModel.lines.Add(line_end);
+                }
+                //最后一个节点,修改 form 为循环里的最后一个节点id
+                line_end_find.from = _node_id + "_" + (jffzr_count - 1);
+            }
 
             //从数据库根据用户名称,查询出用户序号
             foreach (switchFlow_SignerType s in data.data)
@@ -1004,7 +1114,7 @@ namespace OpenAuth.App
                 }
                 NodesItem node = schemeModel.nodes.Find(v => v.name == s.SignerType);
                 //node.id= s.NodeCode;//Sign_Id 不能放在id,因为有很多关联
-                node.name =  node.name + "_" + s.Signer;//经费负责人_周华,CWWLBZ\Controllers\ViewUserSignController.cs 行 562 在使用这个格式
+                node.name = node.name + "_" + s.Signer;//经费负责人_周华,CWWLBZ\Controllers\ViewUserSignController.cs 行 562 在使用这个格式
                 node.setInfo.NodeDesignate = "SPECIAL_USER";
                 node.setInfo.NodeDesignateData.users = new List<string>
                 {
@@ -1036,6 +1146,11 @@ namespace OpenAuth.App
             //删除临时流程模板
             //_flowSchemeApp.Delete(new string[] { sc.Id });
         }
+        public T DeepCopy<T>(T obj)
+        {
+            string json = JsonConvert.SerializeObject(obj);
+            return JsonConvert.DeserializeObject<T>(json);
+        }
 
         /// <summary>
         /// 按流程实例名字获取,并把各个节点按顺序排好,
@@ -1044,6 +1159,50 @@ namespace OpenAuth.App
         /// <returns></returns>
         public async Task<TableData> GetOrderByNode(string schemeName)
         {
+            List<FlowInstance> f = await _LoadBySchemeName(schemeName);
+            FlowInstance a = new FlowInstance();
+            if (f.Count > 0)
+            {
+                a = f.First();
+            }
+            else
+            {
+                return new TableData();
+            }
+            //转换模型
+            schemeContentModel schemeModel = JsonConvert.DeserializeObject<schemeContentModel>(a.SchemeContent);
+            //进行排序
+            List<NodesItem> v = _flowSchemeApp.orderby(schemeModel);
+
+            TableData t = new()
+            {
+                data = v
+            };
+            return t;
+        }
+        /// <summary>
+        /// 按流程实例名字获取流程
+        /// </summary>
+        /// <param name="schemeName"></param>
+        /// <returns></returns>
+        public async Task<TableData> LoadBySchemeName(string schemeName)
+        {
+            List<FlowInstance> f = await _LoadBySchemeName(schemeName);
+
+            TableData t = new()
+            {
+                data = f
+            };
+            return t;
+        }
+        /// <summary>
+        /// 根据 流程名称 查询流程实例
+        /// </summary>
+        /// <param name="schemeName"></param>
+        /// <returns></returns>
+        private async Task<List<FlowInstance>> _LoadBySchemeName(string schemeName)
+        {
+            List<FlowInstance> a = new();
             QueryFlowInstanceListReq request = new QueryFlowInstanceListReq()
             {
                 key = schemeName
@@ -1055,21 +1214,12 @@ namespace OpenAuth.App
                 b = await Load(request);
                 if (b.count == 0)
                 {
-                    return new TableData();
+                    return a;
                 }
             }
-            List<FlowInstance> a = b.data;
+            a = b.data;
 
-            //转换模型
-            schemeContentModel schemeModel = JsonConvert.DeserializeObject<schemeContentModel>(a.FirstOrDefault().SchemeContent);
-            //进行排序
-            List<NodesItem> v = _flowSchemeApp.orderby(schemeModel);
-
-            TableData t = new()
-            {
-                data = v
-            };
-            return t;
+            return a;
         }
     }
 }
