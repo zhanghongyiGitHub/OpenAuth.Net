@@ -1,5 +1,7 @@
 # 企业版代码生成器
 
+本章节视频讲解请参考：[OpenAuth.Net视频合集--使用企业版代码生成器](https://www.bilibili.com/video/BV1JCuyeaEFp/)
+
 ## 术语解释
 
 在添加新功能之前，需要先了解OpenAuth.Net生成代码时的两个概念：动态头部和固定头部
@@ -49,17 +51,21 @@ initCfg() {
 -- mysql示例
 create table stock
 (
-    createtime     datetime       not null comment '操作时间',
-    status   int            not null comment '出库/入库',
-    price    decimal(10, 1) not null comment '产品单价',
-    number   int            not null comment '产品数量',
-    name     text           not null comment '产品名称',
-    orgid    varchar(50)    null comment '组织ID',
-    user     varchar(50)    not null comment '操作人',
-    viewable varchar(50)    not null comment '可见范围',
-    id       varchar(50)    not null comment '数据ID'
-        primary key
+    Id       varchar(50)    not null comment '数据ID'
+        primary key,
+    Name     text           not null comment '产品名称',
+    Number   int            not null comment '产品数量',
+    Price    decimal(10, 1) not null comment '产品单价',
+    Status   int            not null comment '出库/入库',
+    Viewable varchar(50)    not null comment '可见范围',
+    User     varchar(50)    not null comment '操作人',
+    Time     datetime       not null comment '操作时间',
+    OrgId    varchar(50)    null comment '组织ID'
 )
+    comment '出入库信息表' charset = utf8
+                           row_format = COMPACT;
+
+
 
 ```
 
@@ -79,6 +85,7 @@ create table stock
 ![2021923225040](http://img.openauth.net.cn/2021923225040.png)
 
 这时，编辑字段具体的属性。如是否【可显示】【可编辑】等。
+
 
 ## 子表添加
 
@@ -134,6 +141,10 @@ src\views\stocks\index.vue
 这样就可以访问刚刚新加的仓储管理功能，到此就完成了添加一个新模块功能：
 
 ![20211208011431](http://img.openauth.net.cn/20211208011431.png)
+
+## 其他
+
+当采用动态头部时，如果数据库新加了字段，需要使用【同步结构】功能把新字段同步到代码生成器中。为了防止对已有的配置造成影响，该功能只新增字段，不会对已有字段进行调整。
 
 
 

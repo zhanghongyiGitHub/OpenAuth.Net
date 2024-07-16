@@ -1,12 +1,22 @@
 OpenAuth.Pro是一套全新的前端界面，基于vue-element-admin，采用VUE全家桶（VUE+VUEX+VUE-ROUTER）单页面SPA开发。它使用开源版OpenAuth.Net的API接口（即：OpenAuth.WebApi）提供数据服务。二者的关系如下：
 
-![](/architect.png)
+![系统架构](http://img.openauth.net.cn/系统架构.png)
 
 企业版代码获取方式：[http://www.openauth.net.cn/question/detail.html?id=a2be2d61-7fcb-4df8-8be2-9f296c22a89c](http://www.openauth.net.cn/question/detail.html?id=a2be2d61-7fcb-4df8-8be2-9f296c22a89c)
 
 企业Vue2版本演示：[http://demo.openauth.net.cn:1803/](http://demo.openauth.net.cn:1803/)
 
 企业H5版本演示（请使用浏览器移动模式或直接用手机打开）：[http://demo.openauth.net.cn:1804/](http://demo.openauth.net.cn:1804/)
+
+## OpenAuth.Net系列教学视频
+
+[OpenAuth.Net视频合集--系统结构及代码下载](https://www.bilibili.com/video/BV1Z1421q7xU/)
+
+[OpenAuth.Net视频合集--企业版代码启动](https://www.bilibili.com/video/BV1KSuQebEek/)
+
+[OpenAuth.Net视频合集--使用企业版代码生成器](https://www.bilibili.com/video/BV1JCuyeaEFp/)
+
+[OpenAuth.Net视频合集--权限管理介绍](https://www.bilibili.com/video/BV1M9KeejENf/)
 
 
 ## 工具准备
@@ -60,18 +70,23 @@ OpenAuth.Pro v4.3及以前的版本使用Node 14
 
 :::
 
-使用npm run dev 命令运行。如下图：
-![20211214232229](http://img.openauth.net.cn/20211214232229.png)
-
-启动成功后，使用浏览器访问[http://localhost:1803/](http://localhost:1803/) 即可打开企业版界面
-
-::: warning 注意事项
-开发环境配置文件为`.env.dev`，调试前请调整为自己的接口地址：
+修改配置文件`.env.dev`对应的后端接口地址，调整为自己的接口地址：
 
 ```javascript
 VUE_APP_BASE_API = http://localhost:52789/api
 VUE_APP_BASE_IMG_URL = http://localhost:52789
 ```
+
+::: warning 注意事项
+如果是发布打包，调整的文件为`.env.prod`
+:::
+
+使用npm run dev 命令运行。如下图：
+![20211214232229](http://img.openauth.net.cn/20211214232229.png)
+
+启动成功后，使用浏览器访问[http://localhost:1803/](http://localhost:1803/) 即可打开企业版界面
+
+
 
 
 

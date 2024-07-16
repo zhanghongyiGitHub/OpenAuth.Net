@@ -26,6 +26,7 @@ using System.Linq.Expressions;
 using System.Net.Http;
 using System.Threading.Tasks;
 using Infrastructure.Const;
+using Infrastructure.Extensions;
 using Infrastructure.Helpers;
 using Microsoft.EntityFrameworkCore;
 using Newtonsoft.Json.Linq;
@@ -55,7 +56,8 @@ namespace OpenAuth.App
             IRepository<FlowInstance, OpenAuthDBContext> repository
             , RevelanceManagerApp app, FlowSchemeApp flowSchemeApp, FormApp formApp,
             IHttpClientFactory httpClientFactory, IAuth auth, IServiceProvider serviceProvider,
-            SysMessageApp messageApp, DbExtension dbExtension, UserManagerApp userManagerApp, OrgManagerApp orgManagerApp)
+            SysMessageApp messageApp, DbExtension dbExtension, UserManagerApp userManagerApp,
+            OrgManagerApp orgManagerApp)
             : base(unitWork, repository, auth)
         {
             _revelanceApp = app;
@@ -137,7 +139,14 @@ namespace OpenAuth.App
             {
                 var t = Type.GetType("OpenAuth.App." + flowInstance.DbName + "App");
                 ICustomerForm icf = (ICustomerForm)_serviceProvider.GetService(t);
-                icf.Add(flowInstance.Id, flowInstance.FrmData);
+                try
+                {
+                    icf.Add(flowInstance.Id, flowInstance.FrmData);
+                }
+                catch (Exception e)
+                {
+                    throw new Exception("流程表单数据解析失败,请检查表单是否填写完整");
+                }
             }
 
             //如果工作流配置的表单配置有对应的数据库
@@ -275,6 +284,7 @@ namespace OpenAuth.App
                         {
                             continue;
                         }
+
                         updatestr += $"{column.ColumnName} = '{val}',";
                     }
 
@@ -322,13 +332,6 @@ namespace OpenAuth.App
                 throw new Exception("当前用户没有审批该节点权限");
             }
 
-            FlowInstanceOperationHistory flowInstanceOperationHistory = new FlowInstanceOperationHistory
-            {
-                InstanceId = instanceId,
-                CreateUserId = tag.UserId,
-                CreateUserName = tag.UserName,
-                CreateDate = DateTime.Now
-            }; //操作记录
             FlowRuntime wfruntime = new FlowRuntime(flowInstance);
 
             #region 会签
@@ -341,7 +344,7 @@ namespace OpenAuth.App
 
                 string canCheckId = ""; //寻找当前登录用户可审核的节点Id
                 foreach (string fromForkStartNodeId in wfruntime.FromNodeLines[wfruntime.currentNodeId]
-                    .Select(u => u.to))
+                             .Select(u => u.to))
                 {
                     var fromForkStartNode = wfruntime.Nodes[fromForkStartNodeId]; //与会前开始节点直接连接的节点
                     canCheckId = GetOneForkLineCanCheckNodeId(fromForkStartNode, wfruntime, tag);
@@ -356,6 +359,7 @@ namespace OpenAuth.App
                 flowInstanceOperationHistory.Content =
                     $"{user.Account}-{DateTime.Now.ToString("yyyy-MM-dd HH:mm")}审批了【{wfruntime.Nodes[canCheckId].name}】" +
                     $"结果：{(tag.Taged == 1 ? "同意" : "不同意")}，备注：{tag.Description}";
+                AddOperationHis(instanceId, tag, content);
 
                 wfruntime.MakeTagNode(canCheckId, tag); //标记审核节点状态
                 string res = wfruntime.NodeConfluence(canCheckId, tag);
@@ -383,6 +387,8 @@ namespace OpenAuth.App
                     flowInstance.MakerList = GetForkNodeMakers(wfruntime, wfruntime.currentNodeId);
                     AddTransHistory(wfruntime);
                 }
+
+                flowInstance.SchemeContent = JsonHelper.Instance.Serialize(wfruntime.ToSchemeObj());
             }
 
             #endregion 会签
@@ -407,59 +413,41 @@ namespace OpenAuth.App
                         }
                     }
 
-                    if (canNext)
-                    {
-                        flowInstance.PreviousId = flowInstance.ActivityId;
-                        flowInstance.ActivityId = wfruntime.nextNodeId;
-                        flowInstance.ActivityType = wfruntime.nextNodeType;
-                        flowInstance.ActivityName = wfruntime.nextNode.name;
-                        flowInstance.MakerList = wfruntime.nextNodeType == 4 ? "" : GetNextMakers(wfruntime, request);
-                        flowInstance.IsFinish = (wfruntime.nextNodeType == 4
-                            ? FlowInstanceStatus.Finished
-                            : FlowInstanceStatus.Running);
-                    }
-                }
-                else
+                if (canNext)
                 {
-                    flowInstance.IsFinish = FlowInstanceStatus.Disagree; //表示该节点不同意
-                    wfruntime.nextNodeId = "-1";
-                    wfruntime.nextNodeType = 4;
+                    flowInstance.PreviousId = flowInstance.ActivityId;
+                    flowInstance.ActivityId = wfruntime.nextNodeId;
+                    flowInstance.ActivityType = wfruntime.nextNodeType;
+                    flowInstance.ActivityName = wfruntime.nextNode.name;
+                    flowInstance.MakerList = wfruntime.nextNodeType == 4 ? "" : GetNextMakers(wfruntime, request);
+                    flowInstance.IsFinish = (wfruntime.nextNodeType == 4
+                        ? FlowInstanceStatus.Finished
+                        : FlowInstanceStatus.Running);
                 }
-
-                AddTransHistory(wfruntime);
-
-                flowInstanceOperationHistory.Content =
-                    $"{user.Account}-{DateTime.Now.ToString("yyyy-MM-dd HH:mm")}审批了【{wfruntime.currentNode.name}】" +
-                    $"结果：{(tag.Taged == 1 ? "同意" : "不同意")}，备注：{tag.Description}";
+            }
+            else //审批结果为不同意
+            {
+                flowInstance.IsFinish = FlowInstanceStatus.Disagree;
+                wfruntime.nextNodeId = "-1";
+                wfruntime.nextNodeType = 4;
             }
 
-            #endregion 一般审核
-
+            var content =
+                $"{user.Account}-{DateTime.Now.ToString("yyyy-MM-dd HH:mm")}审批了【{wfruntime.currentNode.name}】" +
+                $"结果：{(tag.Taged == 1 ? "同意" : "不同意")}，备注：{tag.Description}";
+            AddOperationHis(flowInstance.Id, tag, content);
             flowInstance.SchemeContent = JsonHelper.Instance.Serialize(wfruntime.ToSchemeObj());
 
-            if (!string.IsNullOrEmpty(request.FrmData))
+            //如果审批通过，且下一个审批人是自己，则自动审批
+            if (tag.Taged == (int)TagState.Ok)
             {
-                flowInstance.FrmData = request.FrmData;
-
-                if (flowInstance.FrmType == 1) //如果是开发者自定义的表单,更新对应数据库表数据
+                if (flowInstance.MakerList != "1" && (!flowInstance.MakerList.Contains(user.Id)))
                 {
-                    var t = Type.GetType("OpenAuth.App." + flowInstance.DbName + "App");
-                    ICustomerForm icf = (ICustomerForm)_serviceProvider.GetService(t);
-                    icf.Update(flowInstance.Id, flowInstance.FrmData);
+                    return;
                 }
+
+                VerifyNode(request, tag, flowInstance);
             }
-
-            UnitWork.Update(flowInstance);
-            UnitWork.Add(flowInstanceOperationHistory);
-
-            //给流程创建人发送通知信息
-            _messageApp.SendMsgTo(flowInstance.CreateUserId,
-                $"你的流程[{flowInstance.CustomName}]已被{user.Name}处理。处理情况如下:{flowInstanceOperationHistory.Content}");
-
-            UnitWork.Save();
-
-            wfruntime.NotifyThirdParty(_httpClientFactory.CreateClient(), tag);
-            return true;
         }
 
         //会签时，获取一条会签分支上面是否有用户可审核的节点
@@ -675,6 +663,10 @@ namespace OpenAuth.App
                 //当审批流程时，能进到这里，表明当前登录用户已经有审批当前节点的权限，完全可以直接用登录用户的直接上级
                 var user = _auth.GetCurrentUser().User;
                 var parentId = _userManagerApp.GetParent(user.Id);
+                if (StringExtension.IsNullOrEmpty(parentId))
+                {
+                    throw new Exception("无法找到当前用户的直属上级");
+                }
 
                 makerList = GenericHelpers.ArrayToString(new[] { parentId }, makerList);
             }
@@ -779,7 +771,8 @@ namespace OpenAuth.App
             }
             else if (node.setInfo != null)
             {
-                if (string.IsNullOrEmpty(node.setInfo.NodeDesignate) || node.setInfo.NodeDesignate == Setinfo.ALL_USER) //所有成员
+                if (string.IsNullOrEmpty(node.setInfo.NodeDesignate) ||
+                    node.setInfo.NodeDesignate == Setinfo.ALL_USER) //所有成员
                 {
                     makerList = "1";
                 }
@@ -884,7 +877,7 @@ namespace OpenAuth.App
                 // 加入搜索自定义标题
                 if (!string.IsNullOrEmpty(request.key))
                 {
-                    waitExp = waitExp.And(t => t.CustomName.Contains(request.key));
+                    waitExp = PredicateBuilder.And(waitExp, t => t.CustomName.Contains(request.key));
                 }
 
                 result.count = await UnitWork.Find(waitExp).CountAsync();
@@ -918,7 +911,7 @@ namespace OpenAuth.App
                 // 加入搜索自定义标题
                 if (!string.IsNullOrEmpty(request.key))
                 {
-                    myFlowExp = myFlowExp.And(t => t.CustomName.Contains(request.key));
+                    myFlowExp = PredicateBuilder.And(myFlowExp, t => t.CustomName.Contains(request.key));
                 }
 
                 result.count = await UnitWork.Find(myFlowExp).CountAsync();
@@ -949,6 +942,20 @@ namespace OpenAuth.App
                 IsFinish = wfruntime.nextNodeType == 4 ? FlowInstanceStatus.Finished : FlowInstanceStatus.Running,
                 TransitionSate = 0
             });
+        }
+
+        private void AddOperationHis(string instanceId, Tag tag, string content)
+        {
+            FlowInstanceOperationHistory flowInstanceOperationHistory = new FlowInstanceOperationHistory
+            {
+                InstanceId = instanceId,
+                CreateUserId = tag.UserId,
+                CreateUserName = tag.UserName,
+                CreateDate = DateTime.Now,
+                Content = content
+            }; //操作记录
+
+            UnitWork.Add(flowInstanceOperationHistory);
         }
 
         public List<FlowInstanceOperationHistory> QueryHistories(QueryFlowInstanceHistoryReq request)

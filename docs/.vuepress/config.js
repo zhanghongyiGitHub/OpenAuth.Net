@@ -1,11 +1,12 @@
 /*
  * @Author: yubaolee <yubaolee@163.com> | ahfu~ <954478625@qq.com>
  * @Date: 2023-08-12 10:48:24
- * @LastEditTime: 2023-12-30 21:10:18
+ * @LastEditTime: 2024-06-19 20:48:12
  * @Description: 
  * @
  * @Copyright (c) 2023 by yubaolee | ahfu~ , All Rights Reserved. 
 */
+
 module.exports = {
   title: 'OpenAuth.Net',
   description: '最好用的.net权限工作流框架,最好用的.net vue前后分离框架',
@@ -13,7 +14,15 @@ module.exports = {
     ['link', {
       rel: 'icon',
       href: '/logo.png'
-    }]
+    }],['script',{},
+      `var _hmt = _hmt || [];
+      (function () {
+      var hm = document.createElement('script')
+      hm.src = 'https://hm.baidu.com/hm.js?93a7b9a145222f9b7109d643a0c58f8d'
+      var s = document.getElementsByTagName('script')[0]
+      s.parentNode.insertBefore(hm, s)
+    })();
+      `]
   ],
   extendMarkdown: (md) => {
     md.set({
