@@ -356,7 +356,7 @@ namespace OpenAuth.App
                     throw (new Exception("审核异常,找不到审核节点"));
                 }
 
-                flowInstanceOperationHistory.Content =
+                var content =
                     $"{user.Account}-{DateTime.Now.ToString("yyyy-MM-dd HH:mm")}审批了【{wfruntime.Nodes[canCheckId].name}】" +
                     $"结果：{(tag.Taged == 1 ? "同意" : "不同意")}，备注：{tag.Description}";
                 AddOperationHis(instanceId, tag, content);
@@ -397,21 +397,58 @@ namespace OpenAuth.App
 
             else
             {
-                wfruntime.MakeTagNode(wfruntime.currentNodeId, tag);
-                if (tag.Taged == (int)TagState.Ok)
+                VerifyNode(request, tag, flowInstance);
+            }
+
+            #endregion 一般审核
+
+            //自定义开发表单，需要更新对应的数据库
+            if (!string.IsNullOrEmpty(request.FrmData) && flowInstance.FrmType == 1)
+            {
+                var t = Type.GetType("OpenAuth.App." + flowInstance.DbName + "App");
+                ICustomerForm icf = (ICustomerForm)_serviceProvider.GetService(t);
+                icf.Update(flowInstance.Id, flowInstance.FrmData);
+            }
+
+            UnitWork.Update(flowInstance);
+            //给流程创建人发送通知信息
+            _messageApp.SendMsgTo(flowInstance.CreateUserId,
+                $"你的流程[{flowInstance.CustomName}]已被{user.Name}处理。");
+
+            UnitWork.Save();
+
+            wfruntime.NotifyThirdParty(_httpClientFactory.CreateClient(), tag);
+            return true;
+        }
+
+        /// <summary>
+        /// 普通的节点审批
+        /// </summary>
+        private void VerifyNode(VerificationReq request, Tag tag, FlowInstance flowInstance)
+        {
+            var user = _auth.GetCurrentUser().User;
+
+            if (!string.IsNullOrEmpty(request.FrmData))
+            {
+                flowInstance.FrmData = request.FrmData;
+            }
+
+            FlowRuntime wfruntime = new FlowRuntime(flowInstance);
+            wfruntime.MakeTagNode(wfruntime.currentNodeId, tag);
+            if (tag.Taged == (int)TagState.Ok)
+            {
+                bool canNext = true;
+                if (wfruntime.currentNode.setInfo.NodeDesignate == Setinfo.RUNTIME_MANY_PARENTS)
                 {
-                    bool canNext = true;
-                    if (wfruntime.currentNode.setInfo.NodeDesignate == Setinfo.RUNTIME_MANY_PARENTS)
+                    var roles = _auth.GetCurrentUser().Roles;
+                    //如果是连续多级直属上级且还没到指定的角色，只改变执行人，不到下一个节点
+                    if (!wfruntime.currentNode.setInfo.NodeDesignateData.roles.Intersect(roles.Select(u => u.Id)).Any())
                     {
-                        var roles = _auth.GetCurrentUser().Roles;
-                        //如果是连续多级直属上级且还没到指定的角色，只改变执行人，不到下一个节点
-                        if (!wfruntime.currentNode.setInfo.NodeDesignateData.roles.Intersect(roles.Select(u => u.Id)).Any())
-                        {
-                            canNext = false;
-                            var parentId = _userManagerApp.GetParent(user.Id);
-                            flowInstance.MakerList = parentId;
-                        }
+                        canNext = false;
+                        var parentId = _userManagerApp.GetParent(user.Id);
+                        flowInstance.MakerList = parentId;
                     }
+                }
 
                 if (canNext)
                 {
@@ -532,74 +569,6 @@ namespace OpenAuth.App
             //给流程创建人发送通知信息
             _messageApp.SendMsgTo(flowInstance.CreateUserId,
                 $"你的流程[{flowInstance.CustomName}]已被{user.Name}驳回。备注信息:{reqest.VerificationOpinion}");
-
-            UnitWork.Save();
-
-            wfruntime.NotifyThirdParty(_httpClientFactory.CreateClient(), tag);
-
-            return true;
-        }
-
-        /// <summary>
-        /// 任意转跳节点
-        /// </summary>
-        /// <param name="request">FlowInstanceId,NodeRejectStep=转跳到的节点,VerificationOpinion=说明备注</param>
-        /// <returns></returns>
-        public bool JumpToNode(VerificationReq reqest)
-        {
-            var user = _auth.GetCurrentUser().User;
-            FlowInstance flowInstance = Get(reqest.FlowInstanceId);
-            //if (flowInstance.MakerList != "1" && !flowInstance.MakerList.Contains(user.Id))
-            //{
-            //    throw new Exception("当前用户没有驳回该节点权限");
-            //}
-
-            FlowRuntime wfruntime = new FlowRuntime(flowInstance);
-
-            string rejectNode = ""; //驳回的节点
-            rejectNode = string.IsNullOrEmpty(reqest.NodeRejectStep)
-                ? wfruntime.RejectNode(reqest.NodeRejectType)
-                : reqest.NodeRejectStep;
-
-            var tag = new Tag
-            {
-                Description = reqest.VerificationOpinion,
-                Taged = (int)TagState.Reject,
-                UserId = user.Id,
-                UserName = user.Name
-            };
-
-            wfruntime.MakeTagNode(wfruntime.currentNodeId, tag);
-            flowInstance.IsFinish = FlowInstanceStatus.Rejected; //4表示驳回（需要申请者重新提交表单）
-            if (rejectNode != "")
-            {
-                flowInstance.PreviousId = flowInstance.ActivityId;
-                flowInstance.ActivityId = rejectNode;
-                flowInstance.ActivityType = wfruntime.GetNodeType(rejectNode);
-                flowInstance.ActivityName = wfruntime.Nodes[rejectNode].name;
-                flowInstance.MakerList = GetNodeMarkers(wfruntime.Nodes[rejectNode], flowInstance.CreateUserId);
-
-                AddTransHistory(wfruntime);
-            }
-
-            flowInstance.SchemeContent = JsonHelper.Instance.Serialize(wfruntime.ToSchemeObj());
-            UnitWork.Update(flowInstance);
-
-            UnitWork.Add(new FlowInstanceOperationHistory
-            {
-                InstanceId = reqest.FlowInstanceId,
-                CreateUserId = user.Id,
-                CreateUserName = user.Name,
-                CreateDate = DateTime.Now,
-                Content = "【"
-                          + wfruntime.currentNode.name
-                          + "】【" + DateTime.Now.ToString("yyyy-MM-dd HH:mm") + "】!!!任意转跳节点!!!,备注："
-                          + reqest.VerificationOpinion
-            });
-
-            //给流程创建人发送通知信息
-            //_messageApp.SendMsgTo(flowInstance.CreateUserId,
-            //    $"你的流程[{flowInstance.CustomName}]已被{user.Name}驳回。备注信息:{reqest.VerificationOpinion}");
 
             UnitWork.Save();
 
@@ -890,8 +859,8 @@ namespace OpenAuth.App
                 var instances = UnitWork.Find<FlowInstanceTransitionHistory>(u => u.CreateUserId == user.User.Id)
                     .Select(u => u.InstanceId).Distinct();
                 var query = from ti in instances
-                            join ct in UnitWork.Find<FlowInstance>(null) on ti equals ct.Id
-                            select ct;
+                    join ct in UnitWork.Find<FlowInstance>(null) on ti equals ct.Id
+                    select ct;
 
                 // 加入搜索自定义标题
                 if (!string.IsNullOrEmpty(request.key))
@@ -1060,6 +1029,73 @@ namespace OpenAuth.App
             UnitWork.Save();
         }
 
+        /// <summary>
+        /// 任意转跳节点
+        /// </summary>
+        /// <param name="request">FlowInstanceId,NodeRejectStep=转跳到的节点,VerificationOpinion=说明备注</param>
+        /// <returns></returns>
+        public bool JumpToNode(VerificationReq reqest)
+        {
+            var user = _auth.GetCurrentUser().User;
+            FlowInstance flowInstance = Get(reqest.FlowInstanceId);
+            //if (flowInstance.MakerList != "1" && !flowInstance.MakerList.Contains(user.Id))
+            //{
+            //    throw new Exception("当前用户没有驳回该节点权限");
+            //}
+
+            FlowRuntime wfruntime = new FlowRuntime(flowInstance);
+
+            string rejectNode = ""; //驳回的节点
+            rejectNode = string.IsNullOrEmpty(reqest.NodeRejectStep)
+                ? wfruntime.RejectNode(reqest.NodeRejectType)
+                : reqest.NodeRejectStep;
+
+            var tag = new Tag
+            {
+                Description = reqest.VerificationOpinion,
+                Taged = (int)TagState.Reject,
+                UserId = user.Id,
+                UserName = user.Name
+            };
+
+            wfruntime.MakeTagNode(wfruntime.currentNodeId, tag);
+            flowInstance.IsFinish = FlowInstanceStatus.Rejected; //4表示驳回（需要申请者重新提交表单）
+            if (rejectNode != "")
+            {
+                flowInstance.PreviousId = flowInstance.ActivityId;
+                flowInstance.ActivityId = rejectNode;
+                flowInstance.ActivityType = wfruntime.GetNodeType(rejectNode);
+                flowInstance.ActivityName = wfruntime.Nodes[rejectNode].name;
+                flowInstance.MakerList = GetNodeMarkers(wfruntime.Nodes[rejectNode], flowInstance.CreateUserId);
+
+                AddTransHistory(wfruntime);
+            }
+
+            flowInstance.SchemeContent = JsonHelper.Instance.Serialize(wfruntime.ToSchemeObj());
+            UnitWork.Update(flowInstance);
+
+            UnitWork.Add(new FlowInstanceOperationHistory
+            {
+                InstanceId = reqest.FlowInstanceId,
+                CreateUserId = user.Id,
+                CreateUserName = user.Name,
+                CreateDate = DateTime.Now,
+                Content = "【"
+                          + wfruntime.currentNode.name
+                          + "】【" + DateTime.Now.ToString("yyyy-MM-dd HH:mm") + "】!!!任意转跳节点!!!,备注："
+                          + reqest.VerificationOpinion
+            });
+
+            //给流程创建人发送通知信息
+            //_messageApp.SendMsgTo(flowInstance.CreateUserId,
+            //    $"你的流程[{flowInstance.CustomName}]已被{user.Name}驳回。备注信息:{reqest.VerificationOpinion}");
+
+            UnitWork.Save();
+
+            wfruntime.NotifyThirdParty(_httpClientFactory.CreateClient(), tag);
+
+            return true;
+        }
         public void AddSwitch(switchFlow data)
         {
             //按id获取到模板 /api/FlowSchemes/Get

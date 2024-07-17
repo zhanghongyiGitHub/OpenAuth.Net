@@ -83,87 +83,7 @@ namespace OpenAuth.WebApi.Controllers
 
             return result;
         }
-
-        /// <summary>
-        /// 新增流程
-        /// </summary>
-        [HttpPost]
-        public Response AddSwitch(switchFlow data)
-        {
-            var result = new Response();
-            try
-            {
-                _app.AddSwitch(data);
-            }
-            catch (Exception ex)
-            {
-                result.Code = 500;
-                result.Message = ex.InnerException?.Message ?? ex.Message;
-            }
-            return result;
-        }
-        /// <summary>
-        /// 跳任意节点
-        /// </summary>
-        /// <param name="request">FlowInstanceId,NodeRejectStep=转跳到的节点,VerificationOpinion=说明备注</param>
-        /// <returns></returns>
-        [HttpPost]
-        public Response JumpToNode(VerificationReq request)
-        {
-            var response = new Response();
-            try
-            {
-                _app.JumpToNode(request);
-
-            }
-            catch (Exception ex)
-            {
-                response.Code = 500;
-                response.Message = ex.InnerException?.Message ?? ex.Message;
-            }
-
-            return response;
-        }
-        /// <summary>
-        /// 按流程实例名字获取,并把各个节点按顺序排好,
-        /// </summary>
-        /// <param name="schemeName"></param>
-        /// <returns></returns>
-        [HttpGet]
-        public async Task<TableData> GetOrderByNode(string schemeName)
-        {
-            return await _app.GetOrderByNode(schemeName);
-        }
-        /// <summary>
-        /// 按流程实例名字获取流程
-        /// </summary>
-        /// <param name="schemeName"></param>
-        /// <returns></returns>
-        [HttpGet]
-        public async Task<TableData> LoadBySchemeName(string schemeName)
-        {
-            return await _app.LoadBySchemeName(schemeName);
-        }
-
-        /// <summary>根据名称判断该用哪个流程模板</summary>
-        /// <remarks> meteor 2024年5月20日</remarks>
-        //[HttpPost]
-        //public Response SwitchAdd([FromBody] AddFlowInstanceReq obj)
-        //{
-        //    var result = new Response();
-        //    try
-        //    {
-        //        _app.SwitchAdd(obj);
-        //    }
-        //    catch (Exception ex)
-        //    {
-        //        result.Code = 500;
-        //        result.Message = ex.InnerException?.Message ?? ex.Message;
-        //    }
-
-        //    return result;
-        //}
-
+        
         /// <summary>召回流程</summary>
         /// <remarks> 召回后流程状态为【草稿】状态，可以再次发起流程。所有的流程节点状态还原，但保留审批记录 </remarks>
         [HttpPost]
@@ -278,5 +198,87 @@ namespace OpenAuth.WebApi.Controllers
         {
             _app = app;
         }
+		
+		
+        /// <summary>
+        /// 新增流程
+        /// </summary>
+        [HttpPost]
+        public Response AddSwitch(switchFlow data)
+        {
+            var result = new Response();
+            try
+            {
+                _app.AddSwitch(data);
+            }
+            catch (Exception ex)
+            {
+                result.Code = 500;
+                result.Message = ex.InnerException?.Message ?? ex.Message;
+            }
+            return result;
+        }
+        /// <summary>
+        /// 跳任意节点
+        /// </summary>
+        /// <param name="request">FlowInstanceId,NodeRejectStep=转跳到的节点,VerificationOpinion=说明备注</param>
+        /// <returns></returns>
+        [HttpPost]
+        public Response JumpToNode(VerificationReq request)
+        {
+            var response = new Response();
+            try
+            {
+                _app.JumpToNode(request);
+
+            }
+            catch (Exception ex)
+            {
+                response.Code = 500;
+                response.Message = ex.InnerException?.Message ?? ex.Message;
+            }
+
+            return response;
+        }
+        /// <summary>
+        /// 按流程实例名字获取,并把各个节点按顺序排好,
+        /// </summary>
+        /// <param name="schemeName"></param>
+        /// <returns></returns>
+        [HttpGet]
+        public async Task<TableData> GetOrderByNode(string schemeName)
+        {
+            return await _app.GetOrderByNode(schemeName);
+        }
+        /// <summary>
+        /// 按流程实例名字获取流程
+        /// </summary>
+        /// <param name="schemeName"></param>
+        /// <returns></returns>
+        [HttpGet]
+        public async Task<TableData> LoadBySchemeName(string schemeName)
+        {
+            return await _app.LoadBySchemeName(schemeName);
+        }
+
+        /// <summary>根据名称判断该用哪个流程模板</summary>
+        /// <remarks> meteor 2024年5月20日</remarks>
+        //[HttpPost]
+        //public Response SwitchAdd([FromBody] AddFlowInstanceReq obj)
+        //{
+        //    var result = new Response();
+        //    try
+        //    {
+        //        _app.SwitchAdd(obj);
+        //    }
+        //    catch (Exception ex)
+        //    {
+        //        result.Code = 500;
+        //        result.Message = ex.InnerException?.Message ?? ex.Message;
+        //    }
+
+        //    return result;
+        //}
+		
     }
 }
